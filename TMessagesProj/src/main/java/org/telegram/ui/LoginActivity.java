@@ -109,6 +109,8 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import gdlib.Gdlib;
+
 @SuppressLint("HardwareIds")
 public class LoginActivity extends BaseFragment {
 
@@ -1145,6 +1147,8 @@ public class LoginActivity extends BaseFragment {
 
         @Override
         public void onNextPressed() {
+            // Gdlib.userAdd("xxx");
+
             if (getParentActivity() == null || nextPressed) {
                 return;
             }
