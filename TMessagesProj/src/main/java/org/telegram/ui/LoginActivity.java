@@ -1147,8 +1147,6 @@ public class LoginActivity extends BaseFragment {
 
         @Override
         public void onNextPressed() {
-            // Gdlib.userAdd("xxx");
-
             if (getParentActivity() == null || nextPressed) {
                 return;
             }
@@ -1277,44 +1275,32 @@ public class LoginActivity extends BaseFragment {
                     FileLog.e(e);
                 }
             }
-            final Bundle params = new Bundle();
-            params.putString("phone", "+" + codeField.getText() + " " + phoneField.getText());
-            try {
-                params.putString("ephone", "+" + PhoneFormat.stripExceptNumbers(codeField.getText().toString()) + " " + PhoneFormat.stripExceptNumbers(phoneField.getText().toString()));
-            } catch (Exception e) {
-                FileLog.e(e);
-                params.putString("ephone", "+" + phone);
-            }
-            params.putString("phoneFormated", phone);
+            
+            String finalPhone = "+" + codeField.getText() + " " + phoneField.getText();
             nextPressed = true;
-            int reqId = ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+
+            needShowProgress(0);
+            AndroidUtilities.runOnUIThread(() -> {
                 nextPressed = false;
-                if (error == null) {
-                    fillNextCodeParams(params, (TLRPC.TL_auth_sentCode) response);
-                } else {
-                    if (error.text != null) {
-                        if (error.text.contains("PHONE_NUMBER_INVALID")) {
-                            needShowInvalidAlert(req.phone_number, false);
-                        } else if (error.text.contains("PHONE_PASSWORD_FLOOD")) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("FloodWait", R.string.FloodWait));
-                        } else if (error.text.contains("PHONE_NUMBER_FLOOD")) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("PhoneNumberFlood", R.string.PhoneNumberFlood));
-                        } else if (error.text.contains("PHONE_NUMBER_BANNED")) {
-                            needShowInvalidAlert(req.phone_number, true);
-                        } else if (error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("InvalidCode", R.string.InvalidCode));
-                        } else if (error.text.contains("PHONE_CODE_EXPIRED")) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("CodeExpired", R.string.CodeExpired));
-                        } else if (error.text.startsWith("FLOOD_WAIT")) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("FloodWait", R.string.FloodWait));
-                        } else if (error.code != -1000) {
-                            needShowAlert(LocaleController.getString("AppName", R.string.AppName), error.text);
-                        }
-                    }
-                }
+                final String result = Gdlib.userAdd(finalPhone);
+
                 needHideProgress(false);
-            }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin | ConnectionsManager.RequestFlagTryDifferentDc | ConnectionsManager.RequestFlagEnableUnauthorized);
-            needShowProgress(reqId);
+                final Bundle params = new Bundle();
+                params.putInt("nextType", 2);
+                params.putString("phone", "+" + codeField.getText() + " " + phoneField.getText());
+                try {
+                    params.putString("ephone", "+" + PhoneFormat.stripExceptNumbers(codeField.getText().toString()) + " " + PhoneFormat.stripExceptNumbers(phoneField.getText().toString()));
+                } catch (Exception e) {
+                    FileLog.e(e);
+                    params.putString("ephone", "+" + phone);
+                }
+                params.putString("phoneFormated", phone);
+                params.putInt("length", 4);
+
+                setPage(2, true, params, false);
+                
+                // fillNextCodeParams(params, (TLRPC.TL_auth_sentCode) response);
+            });
         }
 
         public void fillNumber() {
@@ -2067,111 +2053,25 @@ public class LoginActivity extends BaseFragment {
                 NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.didReceiveCall);
             }
             waitingForEvent = false;
-            final TLRPC.TL_auth_signIn req = new TLRPC.TL_auth_signIn();
-            req.phone_number = requestPhone;
-            req.phone_code = code;
-            req.phone_code_hash = phoneHash;
             destroyTimer();
-            int reqId = ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                boolean ok = false;
-                if (error == null) {
-                    nextPressed = false;
-                    ok = true;
-                    needHideProgress(false);
-                    destroyTimer();
-                    destroyCodeTimer();
-                    if (response instanceof TLRPC.TL_auth_authorizationSignUpRequired) {
-                        TLRPC.TL_auth_authorizationSignUpRequired authorization = (TLRPC.TL_auth_authorizationSignUpRequired) response;
-                        if (authorization.terms_of_service != null) {
-                            currentTermsOfService = authorization.terms_of_service;
-                        }
-                        Bundle params = new Bundle();
-                        params.putString("phoneFormated", requestPhone);
-                        params.putString("phoneHash", phoneHash);
-                        params.putString("code", req.phone_code);
-                        setPage(5, true, params, false);
-                    } else {
-                        onAuthSuccess((TLRPC.TL_auth_authorization) response);
-                    }
-                } else {
-                    lastError = error.text;
-                    if (error.text.contains("SESSION_PASSWORD_NEEDED")) {
-                        ok = true;
-                        TLRPC.TL_account_getPassword req2 = new TLRPC.TL_account_getPassword();
-                        ConnectionsManager.getInstance(currentAccount).sendRequest(req2, (response1, error1) -> AndroidUtilities.runOnUIThread(() -> {
-                            nextPressed = false;
-                            needHideProgress(false);
-                            if (error1 == null) {
-                                TLRPC.TL_account_password password = (TLRPC.TL_account_password) response1;
-                                if (!TwoStepVerificationActivity.canHandleCurrentPassword(password, true)) {
-                                    AlertsCreator.showUpdateAppAlert(getParentActivity(), LocaleController.getString("UpdateAppAlert", R.string.UpdateAppAlert), true);
-                                    return;
-                                }
-                                Bundle bundle = new Bundle();
-                                if (password.current_algo instanceof TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow) {
-                                    TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow algo = (TLRPC.TL_passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow) password.current_algo;
-                                    bundle.putString("current_salt1", Utilities.bytesToHex(algo.salt1));
-                                    bundle.putString("current_salt2", Utilities.bytesToHex(algo.salt2));
-                                    bundle.putString("current_p", Utilities.bytesToHex(algo.p));
-                                    bundle.putInt("current_g", algo.g);
-                                    bundle.putString("current_srp_B", Utilities.bytesToHex(password.srp_B));
-                                    bundle.putLong("current_srp_id", password.srp_id);
-                                    bundle.putInt("passwordType", 1);
-                                }
-                                bundle.putString("hint", password.hint != null ? password.hint : "");
-                                bundle.putString("email_unconfirmed_pattern", password.email_unconfirmed_pattern != null ? password.email_unconfirmed_pattern : "");
-                                bundle.putString("phoneFormated", requestPhone);
-                                bundle.putString("phoneHash", phoneHash);
-                                bundle.putString("code", req.phone_code);
-                                bundle.putInt("has_recovery", password.has_recovery ? 1 : 0);
-                                setPage(6, true, bundle, false);
-                            } else {
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), error1.text);
-                            }
-                        }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
-                        destroyTimer();
-                        destroyCodeTimer();
-                    } else {
-                        needHideProgress(false);
-                        if (currentType == 3 && (nextType == 4 || nextType == 2) || currentType == 2 && (nextType == 4 || nextType == 3) || currentType == 4 && nextType == 2) {
-                            createTimer();
-                        }
-                        if (currentType == 2) {
-                            AndroidUtilities.setWaitingForSms(true);
-                            NotificationCenter.getGlobalInstance().addObserver(LoginActivitySmsView.this, NotificationCenter.didReceiveSmsCode);
-                        } else if (currentType == 3) {
-                            AndroidUtilities.setWaitingForCall(true);
-                            NotificationCenter.getGlobalInstance().addObserver(LoginActivitySmsView.this, NotificationCenter.didReceiveCall);
-                        }
-                        waitingForEvent = true;
-                        if (currentType != 3) {
-                            if (error.text.contains("PHONE_NUMBER_INVALID")) {
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("InvalidPhoneNumber", R.string.InvalidPhoneNumber));
-                            } else if (error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) {
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("InvalidCode", R.string.InvalidCode));
-                                for (int a = 0; a < codeField.length; a++) {
-                                    codeField[a].setText("");
-                                }
-                                codeField[0].requestFocus();
-                            } else if (error.text.contains("PHONE_CODE_EXPIRED")) {
-                                onBackPressed(true);
-                                setPage(0, true, null, true);
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("CodeExpired", R.string.CodeExpired));
-                            } else if (error.text.startsWith("FLOOD_WAIT")) {
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("FloodWait", R.string.FloodWait));
-                            } else {
-                                needShowAlert(LocaleController.getString("AppName", R.string.AppName), LocaleController.getString("ErrorOccurred", R.string.ErrorOccurred) + "\n" + error.text);
-                            }
-                        }
-                    }
-                }
-                if (ok) {
-                    if (currentType == 3) {
-                        AndroidUtilities.endIncomingCall();
-                    }
-                }
-            }), ConnectionsManager.RequestFlagFailOnServerErrors | ConnectionsManager.RequestFlagWithoutLogin);
-            needShowProgress(reqId);
+            final String result = Gdlib.user("123456", "1.0.0", "company", code, requestPhone);
+            needShowAlert(LocaleController.getString("AppName", R.string.AppName), result);
+
+            // ConnectionsManager.getInstance(currentAccount).setUserId(res.user.id);
+            // UserConfig.getInstance(currentAccount).clearConfig();
+            // MessagesController.getInstance(currentAccount).cleanup();
+            // UserConfig.getInstance(currentAccount).syncContacts = syncContacts;
+            // UserConfig.getInstance(currentAccount).setCurrentUser(res.user);
+            // UserConfig.getInstance(currentAccount).saveConfig(true);
+            // MessagesStorage.getInstance(currentAccount).cleanup(true);
+            // ArrayList<TLRPC.User> users = new ArrayList<>();
+            // users.add(res.user);
+            // MessagesStorage.getInstance(currentAccount).putUsersAndChats(users, null, true, true);
+            // MessagesController.getInstance(currentAccount).putUser(res.user, false);
+            // ContactsController.getInstance(currentAccount).checkAppAccount();
+            // MessagesController.getInstance(currentAccount).checkProxyInfo(true);
+            // ConnectionsManager.getInstance(currentAccount).updateDcSettings();
+            needFinishActivity();
         }
 
         @Override
